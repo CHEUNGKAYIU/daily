@@ -1,6 +1,5 @@
 # easonFansForumDaily
 自动完成神经研究所每日任务
-"API_KEY":"sk-8dbb0e79eaf642839a304b184219d2cf"
 ## 文件说明
 - dailyMission.py 保存了完成每日任务的脚本，包括签到、答题和摩天轮抽奖。
 
