@@ -1,6 +1,6 @@
 # easonFansForumDaily
 自动完成神经研究所每日任务
-### 1.使用方法
+## 1.使用方法
 fork本repositroy后，在Settings->Secrets中新建仓库密码（New repository secret）。
 USERNAME,PASSWORD,PUSHPLUS_TOKEN,API_KEY,APP_ID
 
