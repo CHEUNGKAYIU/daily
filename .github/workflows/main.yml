@@ -1,0 +1,40 @@
+name: daily
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '35 23 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.11"
+
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r ./requirements.txt
+
+    - name: Prepare chromedriver
+      uses: nanasess/setup-chromedriver@v2
+
+    - name: dailyMission
+      env:
+        USERNAME: ${{ secrets.USERNAME }}
+        PASSWORD: ${{ secrets.PASSWORD }}
+        API_KEY: ${{ secrets.API_KEY }}
+        APP_ID: ${{ secrets.APP_ID }}
+        PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+      run: |
+        python dailyMission.py --headless
