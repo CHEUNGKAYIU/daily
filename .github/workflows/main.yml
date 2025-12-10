@@ -3,12 +3,7 @@ name: daily
 on:
   workflow_dispatch:
   schedule:
-    # 多个随机时间点，GitHub会在这些时间执行
-    - cron: '15 23 * * *'  # 23:15
-    - cron: '25 23 * * *'  # 23:25
-    - cron: '35 23 * * *'  # 23:35
-    - cron: '45 23 * * *'  # 23:45
-    - cron: '55 23 * * *'  # 23:55
+    - cron: '15 23 * * *'  # UTC 23:15 = 北京时间 07:15
 
 permissions:
   contents: read
@@ -40,4 +35,5 @@ jobs:
         PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
         ADDRESS: ${{ secrets.ADDRESS }}
       run: |
+        sleep $((RANDOM % 600))
         python requests_mission.py
