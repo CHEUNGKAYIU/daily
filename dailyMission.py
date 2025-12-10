@@ -341,22 +341,25 @@ def get_answer_from_api(prompt):
 
 def check_free_lottery(driver):
     driver.get("https://www.easonfans.com/forum/plugin.php?id=gplayconstellation:front")
+    
+    # 获取formhash
     try:
-        # 等待并检查是否还有剩余的免费抽奖次数
-        message_element = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.XPATH, "//span[contains(text(), '今日剩余免费次数：0次')]"))
-        )
-        return False  # 没有剩余免费抽奖次数
+        formhash_element = driver.find_element(By.NAME, "formhash")
+        formhash = formhash_element.get_attribute("value")
     except:
-        return True  # 还有剩余免费抽奖次数
+        formhash = ""
+    
+    # 查询免费抽奖次数
+    check_url = f"https://www.easonfans.com/forum/plugin.php?id=gplayconstellation:front&mod=index&formhash={formhash}&act=game_info&inajax=1&ajaxtarget=game_info"
+    driver.get(check_url)
+    
+    return '今日剩余免费次数：0次' not in driver.page_source
 
 def lottery(driver):
     if not check_free_lottery(driver):
         print("今天已免费抽奖。")
         return
 
-    # 等待抽奖按钮可点击并点击
-    
     try:
         WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.ID, "pointlevel"))
@@ -364,8 +367,13 @@ def lottery(driver):
         print("开始免费抽奖。")
         sleep(5)  # 等待抽奖结果
 
-        # 重新检查是否抽奖成功
-        if not check_free_lottery(driver):
+        # 提取抽奖获得的金钱信息
+        page_source = driver.page_source
+        money_match = re.search(r'获得【[^】]*】(\d+)金钱', page_source)
+        if money_match:
+            lottery_money = money_match.group(1)
+            print(f"免费抽奖成功！获得{lottery_money}金钱")
+        elif not check_free_lottery(driver):
             print("免费抽奖成功！")
         else:
             print("免费抽奖失败。")

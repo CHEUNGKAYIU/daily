@@ -3,7 +3,12 @@ name: daily
 on:
   workflow_dispatch:
   schedule:
-    - cron: '35 23 * * *'
+    # 多个随机时间点，GitHub会在这些时间执行
+    - cron: '15 23 * * *'  # 23:15
+    - cron: '25 23 * * *'  # 23:25
+    - cron: '35 23 * * *'  # 23:35
+    - cron: '45 23 * * *'  # 23:45
+    - cron: '55 23 * * *'  # 23:55
 
 permissions:
   contents: read
@@ -29,6 +34,13 @@ jobs:
     - name: Prepare chromedriver
       uses: nanasess/setup-chromedriver@v2
 
+    - name: Random delay
+      run: |
+        # 随机延迟0-1800秒(0-30分钟)
+        delay=$((RANDOM % 1800))
+        echo "随机延迟 $delay 秒..."
+        sleep $delay
+
     - name: dailyMission
       env:
         USERNAME: ${{ secrets.USERNAME }}
@@ -36,5 +48,6 @@ jobs:
         API_KEY: ${{ secrets.API_KEY }}
         APP_ID: ${{ secrets.APP_ID }}
         PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+        ADDRESS: ${{ secrets.ADDRESS }}
       run: |
-        python dailyMission.py --headless
+        python requests_mission.py
