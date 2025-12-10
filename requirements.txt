@@ -1,5 +1,5 @@
-selenium
-beautifulsoup4
-dashscope
-ddddocr
 requests
+beautifulsoup4
+Pillow
+ddddocr
+dashscope

@@ -31,16 +31,6 @@ jobs:
         pip install --upgrade pip
         pip install -r ./requirements.txt
 
-    - name: Prepare chromedriver
-      uses: nanasess/setup-chromedriver@v2
-
-    - name: Random delay
-      run: |
-        # 随机延迟0-1800秒(0-30分钟)
-        delay=$((RANDOM % 1800))
-        echo "随机延迟 $delay 秒..."
-        sleep $delay
-
     - name: dailyMission
       env:
         USERNAME: ${{ secrets.USERNAME }}
