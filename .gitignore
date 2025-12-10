@@ -4,7 +4,7 @@ dailyMission.py
 # 验证码图片
 debug_verify_code.png
 *.png
-
+session_cookies.json
 # 浏览器驱动
 chromedriver-win64/
 chromedriver-linux64/

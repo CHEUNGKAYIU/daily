@@ -560,17 +560,11 @@ def get_answer_from_api(prompt):
     return 'a2'
 
 def check_free_lottery(session):
-    # 获取抽奖页面的formhash
+    # 获取抽奖页面
     url = f"{address}/forum/plugin.php?id=gplayconstellation:front"
     response = session.get(url)
-    soup = BeautifulSoup(response.text, 'html.parser')
     
-    formhash_input = soup.find('input', {'name': 'formhash'})
-    formhash = formhash_input.get('value') if formhash_input else ''
-    
-    # 查询免费抽奖次数
-    check_url = f"{address}/forum/plugin.php?id=gplayconstellation:front&mod=index&formhash={formhash}&act=game_info&inajax=1&ajaxtarget=game_info"
-    response = session.get(check_url)
+    # 从页面中查找game_info，检查今日剩余免费次数
     return '今日剩余免费次数：0次' not in response.text
 
 def lottery(session):
@@ -579,7 +573,19 @@ def lottery(session):
         return
 
     try:
-        # 执行抽奖请求
+        # 获取抽奖页面的formhash
+        url = f"{address}/forum/plugin.php?id=gplayconstellation:front"
+        response = session.get(url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        formhash_input = soup.find('input', {'name': 'formhash'})
+        formhash = formhash_input.get('value') if formhash_input else ''
+        
+        # 第一步：获取抽奖结果
+        game_result_url = f"{address}/forum/plugin.php?id=gplayconstellation:front&mod=index&formhash={formhash}&act=game_result&inajax=1&ajaxtarget=myaward"
+        response = session.get(game_result_url)
+        
+        # 第二步：显示奖励
         lottery_url = f"{address}/forum/plugin.php?id=gplayconstellation:front&mod=index&act=show_award&msg1=1&msg2=6&msg3=6&infloat=yes&handlekey=gplayconstellation&inajax=1&ajaxtarget=fwin_content_gplayconstellation"
         response = session.get(lottery_url)
         
@@ -587,7 +593,7 @@ def lottery(session):
         money_match = re.search(r'获得【[^】]*】(\d+)金钱', response.text)
         if money_match:
             lottery_money = money_match.group(1)
-            add_log(f"抽奖成功！获得{lottery_money}金钱")
+            add_log(f"抽奖成功！获得金钱")
         else:
             add_log("抽奖完成，但未找到金钱信息。")
             
