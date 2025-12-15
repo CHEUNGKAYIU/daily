@@ -637,7 +637,7 @@ def sendPushplus(msg):
         url = "http://www.pushplus.plus/send"
         data = {
             "token": pushplus_token,
-            "title": "神经研究所每日签到"+msg,
+            "title": "每日签到"+msg,
             "content": content,
             "template": "html"
         }
