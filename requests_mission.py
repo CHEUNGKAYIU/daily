@@ -22,6 +22,10 @@ address = None
 
 # 全局日志收集器
 log_messages = []
+# 答题统计
+question_stats = {"correct": 0, "wrong": 0}
+# 积分统计
+money_stats = {"initial": 0, "final": 0}
 
 def add_log(message):
     """添加日志到推送消息中"""
@@ -486,13 +490,16 @@ def answer_question(session, question_number):
     submit_response = session.post(base_url, data=answer_data)
     
     # 解析答题结果
+    global question_stats
     if '恭喜你，回答正确！奖励' in submit_response.text:
         money_match = re.search(r'奖励(\d+)金钱', submit_response.text)
         money = money_match.group(1) if money_match else '0'
+        question_stats["correct"] += 1
         add_log(f"第{question_number + 1}题回答正确，获得{money}金钱")
     elif '回答错误！扣除' in submit_response.text:
         money_match = re.search(r'扣除(\d+)金钱', submit_response.text)
         money = money_match.group(1) if money_match else '0'
+        question_stats["wrong"] += 1
         add_log(f"第{question_number + 1}题回答错误，扣除{money}金钱")
     else:
         add_log(f"第{question_number + 1}题答题完成，结果未知")
@@ -622,7 +629,10 @@ def getMoney(session):
     
 def sendPushplus(msg):
     try:
-        global log_messages
+        global log_messages, question_stats, money_stats
+        
+        # 构建title：成功 | 对1错2 | 13000-13020
+        title = f"{msg} | 对{question_stats['correct']}错{question_stats['wrong']} | {money_stats['initial']}-{money_stats['final']}"
         
         # 构建完整的推送内容
         content = f"<h3>执行结果: {msg}</h3>\n"
@@ -637,7 +647,7 @@ def sendPushplus(msg):
         url = "http://www.pushplus.plus/send"
         data = {
             "token": pushplus_token,
-            "title": "每日签到"+msg,
+            "title": title,
             "content": content,
             "template": "html"
         }
@@ -704,7 +714,9 @@ def merge(local: bool):
     
     # 登录成功后随机等待
     random_wait()
+    global money_stats
     initial_money = getMoney(req_session.session)
+    money_stats["initial"] = initial_money
     
     # 签到前随机等待
     random_wait()
@@ -721,6 +733,7 @@ def merge(local: bool):
     # 最后获取金钱前随机等待
     random_wait()
     final_money = getMoney(req_session.session)
+    money_stats["final"] = final_money
     add_log(f"金钱变化：{initial_money} -> {final_money}。")
     
     # 任务完成后再次保存cookies
