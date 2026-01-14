@@ -453,20 +453,25 @@ def answer_question(session, question_number):
     base_url = f"{address}/forum/plugin.php?id=ahome_dayquestion:pop"
     response = session.get(base_url)
     print(response)
-    # print("abcabcacbaca"+response.text)
 
-    prompt = build_prompt(response.text)
+    question_text, options_dict = parse_question(response.text)
     print("===============")
-    print(prompt)
-    label = get_answer_from_api(prompt)
-    if not label or label.strip() == '':
-        print("API 未返回结果，默认选择 a2")
-        label = 'a2'
-
-    # 标准化去除空格，并检查是否合法选项
-    if label not in ['a1', 'a2', 'a3', 'a4']:
-        print("API 返回结果不在合法选项中，默认选择 a2")
-        label = 'a2'
+    print(f"题目: {question_text}")
+    
+    # 先从错题本查找
+    label = search_wrong_answers(question_text, options_dict)
+    
+    if not label:
+        # 错题本没有，调用API
+        prompt = build_prompt(response.text)
+        print(prompt)
+        label = get_answer_from_api(prompt)
+        if not label or label.strip() == '':
+            print("API 未返回结果，默认选择 a2")
+            label = 'a2'
+        if label not in ['a1', 'a2', 'a3', 'a4']:
+            print("API 返回结果不在合法选项中，默认选择 a2")
+            label = 'a2'
 
     # 构建答题数据
     soup = BeautifulSoup(response.text, 'html.parser')
@@ -491,10 +496,12 @@ def answer_question(session, question_number):
     
     # 解析答题结果
     global question_stats
+    is_correct = False
     if '恭喜你，回答正确！奖励' in submit_response.text:
         money_match = re.search(r'奖励(\d+)金钱', submit_response.text)
         money = money_match.group(1) if money_match else '0'
         question_stats["correct"] += 1
+        is_correct = True
         add_log(f"第{question_number + 1}题回答正确，获得{money}金钱")
     elif '回答错误！扣除' in submit_response.text:
         money_match = re.search(r'扣除(\d+)金钱', submit_response.text)
@@ -503,40 +510,135 @@ def answer_question(session, question_number):
         add_log(f"第{question_number + 1}题回答错误，扣除{money}金钱")
     else:
         add_log(f"第{question_number + 1}题答题完成，结果未知")
-
-def build_prompt(html):
-    import re
     
+    # 更新错题本
+    update_wrong_answers(question_text, label, options_dict, is_correct)
+
+def parse_question(html):
+    """解析题目和选项，返回题目文本和选项字典"""
     # 提取题目
     question_match = re.search(r'【题目】</b>&nbsp;([^<]+)', html)
     question_text = question_match.group(1) if question_match else ""
     
-    # 检查题目是否为空
-    if not question_text.strip():
-        return ""
-
-    # 提取选项 - 简化正则，匹配id和后面的文本
-    options = []
+    # 提取选项
+    options_dict = {}
     radio_pattern = r'id="(a\d)"[^>]*>&nbsp;&nbsp;([^<]+)'
     matches = re.findall(radio_pattern, html, re.DOTALL)
     
     for option_id, option_text in matches:
-        options.append(f"{option_id}: {option_text.strip()}")
+        options_dict[option_id] = option_text.strip()
     
-    # 检查选项数量
-    if len(options) < 4:
-        # 备用方案：直接查找a1-a4
+    # 备用方案
+    if len(options_dict) < 4:
         for i in range(1, 5):
             aid = f"a{i}"
-            pattern = rf'id="{aid}"[^>]*>.*?([^<]+)</div>'
-            match = re.search(pattern, html, re.DOTALL)
-            if match and aid not in [opt.split(':')[0] for opt in options]:
-                text = match.group(1).replace('&nbsp;', ' ').strip()
-                options.append(f"{aid}: {text}")
+            if aid not in options_dict:
+                pattern = rf'id="{aid}"[^>]*>.*?([^<]+)</div>'
+                match = re.search(pattern, html, re.DOTALL)
+                if match:
+                    options_dict[aid] = match.group(1).replace('&nbsp;', ' ').strip()
     
+    return question_text, options_dict
+
+def build_prompt(html):
+    question_text, options_dict = parse_question(html)
+    
+    if not question_text.strip():
+        return ""
+    
+    options = [f"{k}: {v}" for k, v in sorted(options_dict.items())]
     prompt = f"题目: {question_text}\n选项:\n" + "\n".join(options) + "\n请选择正确答案，只返回选项ID（如a1、a2、a3、a4）："
     
     return prompt
+
+def search_wrong_answers(question_text, options_dict):
+    """从错题本中搜索答案"""
+    import random
+    
+    if not os.path.exists('wrong.txt'):
+        return None
+    
+    try:
+        with open('wrong.txt', 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # 查找题目
+        if question_text not in content:
+            return None
+        
+        # 提取该题的答案
+        pattern = re.escape(question_text) + r'\n((?:a[1-4]: [^\n]+(?:, )?)+)'
+        match = re.search(pattern, content)
+        if not match:
+            return None
+        
+        answers_line = match.group(1)
+        # 提取所有答案选项 (a1, a2, a3, a4)
+        answer_ids = re.findall(r'a[1-4]', answers_line)
+        
+        if not answer_ids:
+            return None
+        
+        # 随机选择一个答案
+        selected = random.choice(answer_ids)
+        print(f"从错题本找到答案，随机选择: {selected}")
+        return selected
+        
+    except Exception as e:
+        print(f"读取错题本失败: {e}")
+        return None
+
+def update_wrong_answers(question_text, answer_id, options_dict, is_correct):
+    """更新错题本"""
+    if not question_text or not answer_id:
+        return
+    
+    try:
+        # 读取现有内容
+        existing_content = ""
+        if os.path.exists('wrong.txt'):
+            with open('wrong.txt', 'r', encoding='utf-8') as f:
+                existing_content = f.read()
+        
+        # 查找是否已有该题
+        pattern = re.escape(question_text) + r'\n((?:a[1-4]: [^\n]+(?:, )?)+)'
+        match = re.search(pattern, existing_content)
+        
+        if match:
+            # 已有该题
+            answers_line = match.group(1)
+            answer_ids = re.findall(r'a[1-4]', answers_line)
+            
+            if is_correct:
+                # 答对了，只保留这个答案
+                new_line = f"{question_text}\n{answer_id}: {options_dict.get(answer_id, '')}"
+            else:
+                # 答错了，添加到列表（如果不存在）
+                if answer_id not in answer_ids:
+                    answer_ids.append(answer_id)
+                # 构建新的答案行
+                answer_parts = [f"{aid}: {options_dict.get(aid, '')}" for aid in sorted(answer_ids)]
+                new_line = f"{question_text}\n{', '.join(answer_parts)}"
+            
+            # 替换旧内容
+            existing_content = re.sub(
+                re.escape(question_text) + r'\n(?:a[1-4]: [^\n]+(?:, )?)+',
+                new_line,
+                existing_content
+            )
+        else:
+            # 新题目
+            if not is_correct:
+                # 只有答错才记录
+                new_line = f"{question_text}\n{answer_id}: {options_dict.get(answer_id, '')}\n"
+                existing_content += ("\n" if existing_content and not existing_content.endswith("\n") else "") + new_line
+        
+        # 写回文件
+        with open('wrong.txt', 'w', encoding='utf-8') as f:
+            f.write(existing_content)
+            
+    except Exception as e:
+        print(f"更新错题本失败: {e}")
 
 def get_answer_from_api(prompt):
     import time
