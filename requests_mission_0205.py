@@ -121,167 +121,217 @@ def string_to_hex(text):
     return hex_val
 
 def verify(session):
+    """
+    四次请求验证流程：
+    1. 第一次请求：不携带cookies，获取security_session_verify
+    2. 第二次请求：携带security_session_verify和srcurl，获取security_session_mid_verify
+    3. 第三次请求：携带前面的cookies，获取论坛cookies（sNgB_2132_*系列）
+    4. 第四次请求：携带所有cookies，完成验证
+    """
     max_retries = 3
+    login_url = f"{address}/FORUM/member.php?mod=logging&action=login"
+    
+    # 固定值：屏幕分辨率（2560,1080）
+    security_verify_data = "323536302c31303830"
+    # 固定值：网站地址的十六进制编码
+    srcurl_value = "68747470733a2f2f7777772e6561736f6e66616e732e636f6d2f464f52554d2f6d656d6265722e7068703f6d6f643d6c6f6767696e6726616374696f6e3d6c6f67696e"
+    
     for attempt in range(max_retries):
         try:
-            print(f"[调试] 登录尝试 {attempt + 1}/{max_retries}")
-            login_url = f"{address}/FORUM/member.php?mod=logging&action=login"
+            print(f"[调试] 验证尝试 {attempt + 1}/{max_retries}")
             
-            # 获取登录页面
+            # ========== 第一次请求 ==========
+            # 清除所有cookies，确保不携带任何cookies
+            session.cookies.clear()
+            print("[调试] 第一次请求：清除所有cookies")
+            
             response = session.get(login_url)
-            soup = BeautifulSoup(response.text, 'html.parser')
+            print(f"[调试] 第一次请求状态: {response.status_code}")
             
-            # 提取所有隐藏字段
-            hidden_fields = {}
-            for input_tag in soup.find_all('input', type='hidden'):
-                name = input_tag.get('name')
-                value = input_tag.get('value', '')
-                if name:
-                    hidden_fields[name] = value
-
-            # 处理验证码
-            verify_img = soup.find('img', class_='verifyimg')
-            if verify_img:
-                img_url = verify_img.get('src')
-                if img_url.startswith('data:'):
-                    base64_data = img_url.split(',')[1]
-                    image_data = base64.b64decode(base64_data)
-                    image = Image.open(BytesIO(image_data))
-
-                    image.save("debug_verify_code.png")
-                    print("[调试] 验证码图片已保存为 debug_verify_code.png")
-
-                    print("[调试] 开始验证码识别...")
-                    start_time = time.time()
-                    
-                    try:
-                        # 使用ddddocr识别验证码
-                        ocr = ddddocr.DdddOcr(show_ad=False)
-                        code = ocr.classification(image_data)
-                        
-                        end_time = time.time()
-                        print(f"[调试] 验证码识别完成，耗时: {end_time - start_time:.2f}秒")
-                        # add_log(f"识别的验证码: '{code}'")
-                        
-                        # 验证是否为5位数字
-                        if not (code.isdigit() and len(code) == 5):
-                            print(f"[警告] 识别结果不是5位数字，使用默认值")
-                            code = "12345"
-                            
-                    except Exception as e:
-                        print(f"[错误] 验证码识别失败: {e}")
-                        code = "12345"
-
-                    # 三步验证流程处理
-                    print(f"[调试] 原始验证码: {code}")
-                    hex_code = string_to_hex(code.strip())
-                    print(f"[调试] 十六进制验证码: {hex_code}")
-                    
-                    # 获得验证码后等待，模拟真人思考时间
-                    random_wait()
-                    
-                    # 第一步：检查并获取security_session_verify cookie
-                    security_session_verify = None
-                    for cookie in session.cookies:
-                        if cookie.name == 'security_session_verify':
-                            security_session_verify = cookie.value
-                            print(f"[调试] 找到security_session_verify: {security_session_verify}")
-                            break
-                    
-                    if not security_session_verify:
-                        print("[错误] 未找到security_session_verify cookie")
-                        return False
-                    
-                    # 第二步：设置srcurl cookie
-                    current_url = login_url
-                    hex_url = string_to_hex(current_url)
-                    session.cookies.set('srcurl', hex_url, path='/')
-                    print(f"[调试] 设置srcurl cookie: {hex_url}")
-                    
-                    # 第三步：发送验证码到验证页面（带上security_session_verify和srcurl）
-                    verify_url = f"{address}/forum/index.php?security_verify_img={hex_code}"
-                    print(f"[调试] 跳转验证页面: {verify_url}")
-                    
-                    # 设置完整的请求头
-                    verify_headers = {
-                        'Referer': f'{address}/forum/index.php',
-                        'Host': address.replace('https://', '').replace('http://', '')
-                    }
-                    
-                    time.sleep(1)
-                    response = session.get(verify_url, headers=verify_headers)
-                    print(f"[调试] 验证页面响应状态: {response.status_code}")
-                    
-                    # 第四步：检查是否获得security_session_high_verify
-                    security_session_high_verify = None
-                    for cookie in session.cookies:
-                        if cookie.name == 'security_session_high_verify':
-                            security_session_high_verify = cookie.value
-                            print(f"[调试] 获得security_session_high_verify: {security_session_high_verify}")
-                            break
-                    
-                    if not security_session_high_verify:
-                        print("[错误] 未获得security_session_high_verify，验证码可能错误")
-                        continue  # 重试
-                    
-                    # 第五步：现在拥有3个必需的cookies，重新请求登录页面
-                    print("[调试] 拥有完整的验证cookies，重新获取登录页面")
-                    
-                    # 确认当前拥有的所有cookies
-                    required_cookies = ['security_session_verify', 'srcurl', 'security_session_high_verify']
-                    print("[调试] 检查必需的cookies:")
-                    for cookie_name in required_cookies:
-                        cookie_found = False
-                        for cookie in session.cookies:
-                            if cookie.name == cookie_name:
-                                print(f"[调试] ✓ {cookie_name}: {cookie.value[:20]}...")
-                                cookie_found = True
-                                break
-                        if not cookie_found:
-                            print(f"[调试] ✗ {cookie_name}: 未找到")
-                    
-                    time.sleep(2)
-                    response = session.get(login_url)
-                    print(f"[调试] 重新请求验证页面状态: {response.status_code}")
-                    
-                    # 保存响应体用于调试
-                    # with open('debug_login_page_after_verify.html', 'w', encoding='utf-8') as f:
-                    #     f.write(response.text)
-                    # print("[调试] 验证后验证页面响应已保存到 debug_login_page_after_verify.html")
-                    
-                    # 输出响应体的前500字符用于快速查看
-                    print(f"[调试] 响应体前500字符: {response.text[:500]}...")
-                    soup = BeautifulSoup(response.text, 'html.parser')
-                    
-                    # 验证是否成功进入登录页面（检查是否还有验证码）
-                    verify_img_check = soup.find('img', class_='verifyimg')
-                    if verify_img_check:
-                        print("[调试] 页面仍有验证码，验证可能失败")
-                        continue  # 重试
-                    else:
-                        print("[调试] 验证码验证成功，可以进行登录")
-                        return True  # 验证成功，返回True
-                    
-                    # 重新提取隐藏字段
-                    hidden_fields = {}
-                    for input_tag in soup.find_all('input', type='hidden'):
-                        name = input_tag.get('name')
-                        value = input_tag.get('value', '')
-                        if name:
-                            hidden_fields[name] = value
+            # 获取security_session_verify cookie
+            security_session_verify = None
+            for cookie in session.cookies:
+                if cookie.name == 'security_session_verify':
+                    security_session_verify = cookie.value
+                    print(f"[调试] 获得security_session_verify: {security_session_verify}")
+                    break
+            
+            if not security_session_verify:
+                print("[错误] 第一次请求未获得security_session_verify cookie")
+                continue
+            
+            time.sleep(1)
+            
+            # ========== 第二次请求 ==========
+            # 携带security_session_verify和srcurl，请求带屏幕分辨率参数的URL
+            second_url = f"{address}/FORUM/member.php?mod=logging&action=login&security_verify_data={security_verify_data}"
+            print(f"[调试] 第二次请求URL: {second_url}")
+            
+            # 设置srcurl cookie
+            session.cookies.set('srcurl', srcurl_value, path='/')
+            print(f"[调试] 设置srcurl cookie: {srcurl_value}")
+            
+            # 打印当前携带的cookies
+            print("[调试] 第二次请求携带的cookies:")
+            for cookie in session.cookies:
+                print(f"[调试]   {cookie.name}: {cookie.value[:30]}...")
+            
+            response = session.get(second_url)
+            print(f"[调试] 第二次请求状态: {response.status_code}")
+            
+            # 获取security_session_mid_verify cookie
+            security_session_mid_verify = None
+            for cookie in session.cookies:
+                if cookie.name == 'security_session_mid_verify':
+                    security_session_mid_verify = cookie.value
+                    print(f"[调试] 获得security_session_mid_verify: {security_session_mid_verify}")
+                    break
+            
+            if not security_session_mid_verify:
+                print("[错误] 第二次请求未获得security_session_mid_verify cookie")
+                continue
+            
+            time.sleep(1)
+            
+            # ========== 第三次请求 ==========
+            # 携带security_session_verify, srcurl, security_session_mid_verify
+            third_url = f"{address}/FORUM/member.php?mod=logging&action=login"
+            print(f"[调试] 第三次请求URL: {third_url}")
+            
+            # 打印当前携带的cookies
+            print("[调试] 第三次请求携带的cookies:")
+            for cookie in session.cookies:
+                print(f"[调试]   {cookie.name}: {cookie.value[:30]}...")
+            
+            response = session.get(third_url)
+            print(f"[调试] 第三次请求状态: {response.status_code}")
+            
+            # 检查是否获得论坛cookies
+            forum_cookies = {}
+            expected_forum_cookies = [
+                'sNgB_2132_saltkey',
+                'sNgB_2132_lastvisit',
+                'sNgB_2132_sid',
+                'sNgB_2132_lastact',
+                'sNgB_2132_lastrequest'
+            ]
+            
+            for cookie in session.cookies:
+                if cookie.name.startswith('sNgB_2132_'):
+                    forum_cookies[cookie.name] = cookie.value
+                    print(f"[调试] 获得论坛cookie: {cookie.name}: {cookie.value[:20]}...")
+            
+            if len(forum_cookies) < 3:
+                print(f"[警告] 第三次请求获得的论坛cookies数量不足: {len(forum_cookies)}")
+                # 继续尝试，不中断
+            
+            time.sleep(1)
+            
+            # ========== 第四次请求 ==========
+            # 携带所有cookies，完成验证
+            fourth_url = f"{address}/FORUM/member.php?mod=logging&action=login"
+            print(f"[调试] 第四次请求URL: {fourth_url}")
+            
+            # 打印当前携带的cookies
+            print("[调试] 第四次请求携带的cookies:")
+            for cookie in session.cookies:
+                print(f"[调试]   {cookie.name}: {cookie.value[:30]}...")
+            
+            response = session.get(fourth_url)
+            print(f"[调试] 第四次请求状态: {response.status_code}")
+            
+            # 检查返回的cookies
+            print("[调试] 第四次请求后的所有cookies:")
+            for cookie in session.cookies:
+                print(f"[调试]   {cookie.name}: {cookie.value[:30]}...")
+            
+            # 检查是否获得sNgB_2132_invite_auth
+            invite_auth = None
+            for cookie in session.cookies:
+                if cookie.name == 'sNgB_2132_invite_auth':
+                    invite_auth = cookie.value
+                    print(f"[调试] 获得sNgB_2132_invite_auth: {invite_auth[:20]}...")
+                    break
+            
+            # 验证是否成功进入登录页面（检查是否还有验证码图片）
+            soup = BeautifulSoup(response.text, 'html.parser')
+            verify_img_check = soup.find('img', class_='verifyimg')
+            
+            if verify_img_check:
+                print("[调试] 页面仍有验证码，验证可能失败")
+                # 输出响应体的前500字符用于调试
+                print(f"[调试] 响应体前500字符: {response.text[:500]}...")
+                continue  # 重试
+            else:
+                print("[调试] 验证成功，可以进行登录")
+                return True  # 验证成功，返回True
 
         except Exception as e:
             print(f"[错误] 验证过程中出现异常: {e}")
+            import traceback
+            traceback.print_exc()
             if attempt < max_retries - 1:
                 time.sleep(2)
                 continue
             else:
                 return False
+    
     return False
 
 def login(session):
-    """登录函数，在验证码验证成功后调用"""
+    """
+    登录函数，在验证码验证成功后调用
+    
+    登录需要携带的cookies:
+    - sNgB_2132_saltkey
+    - sNgB_2132_lastvisit
+    - sNgB_2132_webtctzcountportalindex
+    - sNgB_2132_sendmail
+    - security_session_verify
+    - srcurl
+    - security_session_mid_verify
+    - sNgB_2132_sid
+    - sNgB_2132_lastact
+    - sNgB_2132_lastrequest
+    
+    登录成功后会返回的cookies:
+    - sNgB_2132_lastact
+    - sNgB_2132_lastrequest
+    - sNgB_2132_invite_auth
+    - sNgB_2132_ulastactivity
+    - sNgB_2132_sid
+    - sNgB_2132_auth
+    - sNgB_2132_loginuser
+    - sNgB_2132_activationauth
+    - sNgB_2132_pmnum
+    - sNgB_2132_lastcheckfeed
+    - sNgB_2132_checkfollow
+    - sNgB_2132_lip
+    """
     login_url = f"{address}/FORUM/member.php?mod=logging&action=login"
+    
+    # 检查登录前必需的cookies
+    required_cookies = [
+        'sNgB_2132_saltkey',
+        'sNgB_2132_lastvisit',
+        'security_session_verify',
+        'srcurl',
+        'security_session_mid_verify',
+        'sNgB_2132_sid',
+        'sNgB_2132_lastact',
+        'sNgB_2132_lastrequest'
+    ]
+    
+    print("[调试] 登录前检查必需的cookies:")
+    for cookie_name in required_cookies:
+        cookie_found = False
+        for cookie in session.cookies:
+            if cookie.name == cookie_name:
+                print(f"[调试] ✓ {cookie_name}: {cookie.value[:30]}...")
+                cookie_found = True
+                break
+        if not cookie_found:
+            print(f"[调试] ✗ {cookie_name}: 未找到")
     
     # 获取登录页面
     response = session.get(login_url)
@@ -291,21 +341,28 @@ def login(session):
     formhash_input = soup.find('input', {'name': 'formhash'})
     formhash = formhash_input.get('value') if formhash_input else ''
     
-    # 提取loginhash
-    loginhash_input = soup.find('input', {'name': 'loginhash'})
-    loginhash = loginhash_input.get('value') if loginhash_input else ''
+    # 提取loginhash - 从登录表单的action属性中提取
+    # 表单action格式: member.php?mod=logging&action=login&loginsubmit=yes&loginhash=LQ9Xl
+    loginhash = ''
+    login_form = soup.find('form', {'name': 'login'})
+    if login_form:
+        action = login_form.get('action', '')
+        # 从action URL中提取loginhash参数
+        loginhash_match = re.search(r'loginhash=([^&]+)', action)
+        if loginhash_match:
+            loginhash = loginhash_match.group(1)
     
     print(f"[调试] 提取到formhash: {formhash}")
     print(f"[调试] 提取到loginhash: {loginhash}")
     
-    # 构建正确的登录URL
-    login_submit_url = f"{address}/FORUM/member.php?mod=logging&action=login&loginsubmit=yes&handlekey=login&loginhash={loginhash}&inajax=1"
+    # 构建正确的登录URL（包含loginhash）
+    login_submit_url = f"{address}/FORUM/member.php?mod=logging&action=login&loginsubmit=yes&loginhash={loginhash}&inajax=1"
     print(f"[调试] 登录提交URL: {login_submit_url}")
     
     # 构建登录表单数据
     login_data = {
         'formhash': formhash,
-        'referer': 'https%3A%2F%2Fwww.easonfans.com%2FFORUM%2F',
+        'referer': f'{address}/FORUM/',
         'loginfield': 'username',
         'username': username,
         'password': password,
@@ -315,21 +372,42 @@ def login(session):
     
     print(f"[调试] 登录表单数据: {login_data}")
     
+    # 打印登录前的所有cookies
+    print("[调试] 登录提交时携带的所有cookies:")
+    for cookie in session.cookies:
+        print(f"[调试]   {cookie.name}: {cookie.value[:30]}...")
+    
     # 设置登录请求头
     login_headers = {
         'Content-Type': 'application/x-www-form-urlencoded',
         'X-Requested-With': 'XMLHttpRequest',
-        'Referer': login_url
+        'Referer': login_url,
+        'Origin': address
     }
     
-    # 提交登录
-    response = session.post(login_url, data=login_data, headers=login_headers)
+    # 提交登录到正确的URL
+    response = session.post(login_submit_url, data=login_data, headers=login_headers)
     print(f"[调试] 登录提交响应状态: {response.status_code}")
     
-    # 保存登录响应用于调试
-    # with open('debug_login_submit_response.html', 'w', encoding='utf-8') as f:
-    #     f.write(response.text)
-    # print("[调试] 登录提交响应已保存到 debug_login_submit_response.html")
+    # 打印登录后返回的cookies
+    print("[调试] 登录后返回的cookies:")
+    expected_response_cookies = [
+        'sNgB_2132_lastact',
+        'sNgB_2132_lastrequest',
+        'sNgB_2132_invite_auth',
+        'sNgB_2132_ulastactivity',
+        'sNgB_2132_sid',
+        'sNgB_2132_auth',
+        'sNgB_2132_loginuser',
+        'sNgB_2132_activationauth',
+        'sNgB_2132_pmnum',
+        'sNgB_2132_lastcheckfeed',
+        'sNgB_2132_checkfollow',
+        'sNgB_2132_lip'
+    ]
+    for cookie in session.cookies:
+        if cookie.name in expected_response_cookies or cookie.name.startswith('sNgB_2132_'):
+            print(f"[调试]   {cookie.name}: {cookie.value[:30]}...")
     
     # 检查是否登录成功
     if '欢迎您回来' in response.text:
@@ -337,7 +415,7 @@ def login(session):
         return True
     else:
         print("[调试] 登录失败")
-        print(f"[调试] 登录响应内容: {response.text[:300]}...")
+        print(f"[调试] 登录响应内容: {response.text[:500]}...")
         save_response_on_failure(response, "login")
         return False
 
