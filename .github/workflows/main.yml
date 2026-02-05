@@ -36,4 +36,4 @@ jobs:
         ADDRESS: ${{ secrets.ADDRESS }}
       run: |
         sleep $((RANDOM % 600))
-        python requests_mission.py
+        python requests_mission_0205.py
