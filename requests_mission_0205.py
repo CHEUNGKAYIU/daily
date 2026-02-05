@@ -7,7 +7,6 @@ import json
 import time
 from PIL import Image
 from io import BytesIO
-import ddddocr
 import base64
 import shutil
 from datetime import datetime, timedelta, timezone
