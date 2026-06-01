@@ -11,10 +11,11 @@ import base64
 import shutil
 from datetime import datetime, timedelta, timezone
 from dashscope import Application
+
 """
     四次请求验证流程：
     1. 第一次请求：不携带cookies，获取security_session_verify
-    2. 第二次请求：携带security_session_verify和srcurl，获取security_session_mid_verify
+    2. 第二次请求：携带security_session_verify和srcurl，去除了security_session_mid_verify
     3. 第三次请求：携带前面的cookies，获取论坛cookies（sNgB_2132_*系列）
     4. 第四次请求：携带所有cookies，完成验证
 """
@@ -126,6 +127,7 @@ def string_to_hex(text):
     return hex_val
 
 def verify(session):
+
     max_retries = 3
     login_url = f"{address}/FORUM/member.php?mod=logging&action=login"
     
@@ -178,16 +180,16 @@ def verify(session):
             print(f"[调试] 第二次请求状态: {response.status_code}")
             
             # 获取security_session_mid_verify cookie
-            security_session_mid_verify = None
-            for cookie in session.cookies:
-                if cookie.name == 'security_session_mid_verify':
-                    security_session_mid_verify = cookie.value
-                    print(f"[调试] 获得security_session_mid_verify: {security_session_mid_verify}")
-                    break
+            # security_session_mid_verify = None
+            # for cookie in session.cookies:
+            #     if cookie.name == 'security_session_mid_verify':
+            #         security_session_mid_verify = cookie.value
+            #         print(f"[调试] 获得security_session_mid_verify: {security_session_mid_verify}")
+            #         break
             
-            if not security_session_mid_verify:
-                print("[错误] 第二次请求未获得security_session_mid_verify cookie")
-                continue
+            # if not security_session_mid_verify:
+            #     print("[错误] 第二次请求未获得security_session_mid_verify cookie")
+            #     continue
             
             time.sleep(1)
             
@@ -812,14 +814,15 @@ def merge(local: bool):
 
     # 先进行验证码验证
     verify_success = False
-    while not verify_success:
+    for verify_round in range(3):
         verify_success = verify(req_session.session)
         if verify_success:
             print("[调试] 验证码验证成功，开始登录")
             break
         else:
-            print("重新尝试验证...")
-            time.sleep(5)
+            if verify_round < 2:
+                print("重新尝试验证...")
+                time.sleep(5)
     
     # 验证成功后进行登录
     login_success = False
